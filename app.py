@@ -18,24 +18,20 @@ from langchain.prompts import load_prompt
 from utils import force_git_push
 
 
-def load_json_metadata(json_file: str):
+def json_to_dict(json_file: str) -> dict:
     with open(json_file, "r") as f:
         json_data = json.load(f)
     return json_data
 
 
-def generate_response(
-    chatbot: ConversationChain, input: str, count=1, prompt_data: dict = None
-) -> List[str]:
+def generate_response(chatbot: ConversationChain, input: str, count=1, prompt_data: dict = None) -> List[str]:
     """Generates responses for a `langchain` chatbot."""
     if prompt_data:
         input = chatbot.prompt.template.format(**prompt_data, input=input)
     return [chatbot.predict(input=input) for _ in range(count)]
 
 
-def generate_responses(
-    chatbots: List[ConversationChain], inputs: List[str], prompt_data: dict = None
-) -> List[str]:
+def generate_responses(chatbots: List[ConversationChain], inputs: List[str], prompt_data: dict = None) -> List[str]:
     """Generates parallel responses for a list of `langchain` chatbots."""
     results = []
     with ThreadPoolExecutor(max_workers=100) as executor:
@@ -60,9 +56,7 @@ NUM_RESPONSES = 3  # Number of responses to generate per interaction
 
 DATA_FILENAME = "data.jsonl"
 DATA_FILE = os.path.join("data", DATA_FILENAME)
-repo = Repository(
-    local_dir="data", clone_from=DATASET_REPO_URL, use_auth_token=HF_TOKEN
-)
+repo = Repository(local_dir="data", clone_from=DATASET_REPO_URL, use_auth_token=HF_TOKEN)
 
 TOTAL_CNT = 3  # How many user inputs to collect
 
@@ -88,7 +82,8 @@ f_stop = threading.Event()
 asynchronous_push(f_stop)
 
 prompt = load_prompt(PROMPT_TEMPLATES / "template_01.json")
-prompt_data = load_json_metadata(PROMPT_TEMPLATES / "data_01.json")
+prompt_data = json_to_dict(PROMPT_TEMPLATES / "data_01.json")
+prompt.partial_variables = prompt_data
 
 MODEL_IDS = ["Open-Orca/Mistral-7B-OpenOrca"]
 chatbots = []
@@ -133,9 +128,7 @@ with demo:
     def _predict(txt, state):
         start = time.time()
         responses = generate_responses(chatbots, [txt] * len(chatbots), [prompt_data])
-        print(
-            f"Time taken to generate {len(chatbots)} responses : {time.time() - start:.2f} seconds"
-        )
+        print(f"Time taken to generate {len(chatbots)} responses : {time.time() - start:.2f} seconds")
 
         response2model_id = {}
         for chatbot, response in zip(chatbots, responses):
@@ -156,20 +149,14 @@ with demo:
 
         past_conversation_string = "<br />".join(
             [
-                "<br />".join(
-                    ["Human 😃: " + user_input, "Assistant 🤖: " + model_response]
-                )
-                for user_input, model_response in zip(
-                    state["past_user_inputs"], state["generated_responses"] + [""]
-                )
+                "<br />".join(["Human 😃: " + user_input, "Assistant 🤖: " + model_response])
+                for user_input, model_response in zip(state["past_user_inputs"], state["generated_responses"] + [""])
             ]
         )
         return (
             gr.update(visible=False),
             gr.update(visible=True),
-            gr.update(
-                visible=True, choices=responses, interactive=True, value=responses[0]
-            ),
+            gr.update(visible=True, choices=responses, interactive=True, value=responses[0]),
             gr.update(value=past_conversation_string),
             state,
             gr.update(visible=False),
@@ -182,9 +169,7 @@ with demo:
         done = state["cnt"] == TOTAL_CNT
         state["generated_responses"].append(selected_response)
         state["data"][-1]["selected_response"] = selected_response
-        state["data"][-1]["selected_model"] = state["data"][-1]["response2model_id"][
-            selected_response
-        ]
+        state["data"][-1]["selected_model"] = state["data"][-1]["response2model_id"][selected_response]
         if state["cnt"] == TOTAL_CNT:
             with open(DATA_FILE, "a") as jsonlfile:
                 json_data_with_assignment_id = [
@@ -204,9 +189,7 @@ with demo:
         past_conversation_string = "<br />".join(
             [
                 "<br />".join(["😃: " + user_input, "🤖: " + model_response])
-                for user_input, model_response in zip(
-                    state["past_user_inputs"], state["generated_responses"]
-                )
+                for user_input, model_response in zip(state["past_user_inputs"], state["generated_responses"])
             ]
         )
         toggle_final_submit = gr.update(visible=False)
@@ -219,9 +202,7 @@ with demo:
             # Sync all of the model's memories with the conversation path that
             # was actually taken.
             for chatbot in chatbots:
-                chatbot.memory = model_id2model[
-                    state["data"][-1]["response2model_id"][selected_response]
-                ].memory
+                chatbot.memory = model_id2model[state["data"][-1]["response2model_id"][selected_response]].memory
 
         text_input = gr.update(visible=False) if done else gr.update(visible=True)
         return (
