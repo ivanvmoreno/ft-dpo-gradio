@@ -13,9 +13,16 @@ from huggingface_hub import Repository
 from langchain import ConversationChain
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.llms import HuggingFaceHub
-from langchain.prompts import load_prompt
+from langchain.prompts import PromptTemplate, load_prompt
 
 from utils import force_git_push
+
+
+def replace_template(template: str, data: dict) -> str:
+    """Replace template variables with data."""
+    for key, value in data.items():
+        template = template.replace(f"{{{key}}}", value)
+    return template
 
 
 def json_to_dict(json_file: str) -> dict:
@@ -24,14 +31,13 @@ def json_to_dict(json_file: str) -> dict:
     return json_data
 
 
-def generate_response(chatbot: ConversationChain, input: str, count=1, prompt_data: dict = None) -> List[str]:
+def generate_response(chatbot: ConversationChain, input: str, count=1) -> List[str]:
     """Generates responses for a `langchain` chatbot."""
-    if prompt_data:
-        input = chatbot.prompt.template.format(**prompt_data, input=input)
+    input = chatbot.prompt.template.format(input=input, history=chatbot.memory.buffer)
     return [chatbot.predict(input=input) for _ in range(count)]
 
 
-def generate_responses(chatbots: List[ConversationChain], inputs: List[str], prompt_data: dict = None) -> List[str]:
+def generate_responses(chatbots: List[ConversationChain], inputs: List[str]) -> List[str]:
     """Generates parallel responses for a list of `langchain` chatbots."""
     results = []
     with ThreadPoolExecutor(max_workers=100) as executor:
@@ -40,7 +46,6 @@ def generate_responses(chatbots: List[ConversationChain], inputs: List[str], pro
             chatbots,
             inputs,
             [NUM_RESPONSES] * len(inputs),
-            [prompt_data] * len(inputs),
         ):
             results += result
     return results
@@ -81,9 +86,10 @@ def asynchronous_push(f_stop):
 f_stop = threading.Event()
 asynchronous_push(f_stop)
 
-prompt = load_prompt(PROMPT_TEMPLATES / "template_01.json")
+[input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "prompt_01.json").values()
 prompt_data = json_to_dict(PROMPT_TEMPLATES / "data_01.json")
-prompt.partial_variables = prompt_data
+prompt_tpl = replace_template(prompt_tpl, prompt_data)
+prompt = PromptTemplate(template=prompt_tpl, input_variables=input_vars)
 
 MODEL_IDS = ["Open-Orca/Mistral-7B-OpenOrca"]
 chatbots = []
@@ -127,7 +133,7 @@ with demo:
     # Generate model prediction
     def _predict(txt, state):
         start = time.time()
-        responses = generate_responses(chatbots, [txt] * len(chatbots), [prompt_data])
+        responses = generate_responses(chatbots, [txt] * len(chatbots))
         print(f"Time taken to generate {len(chatbots)} responses : {time.time() - start:.2f} seconds")
 
         response2model_id = {}
@@ -231,13 +237,6 @@ with demo:
     with gr.Column(visible=False) as final_submit:
         submit_hit_button = gr.Button("Submit HIT")
 
-    # Button event handlers
-    get_window_location_search_js = """
-        function(select_response, state, dummy) {
-            return [select_response, state, window.location.search];
-        }
-        """
-
     select_response_button.click(
         _select_response,
         inputs=[select_response, state],
@@ -251,7 +250,6 @@ with demo:
             example_submit,
             final_submit,
         ],
-        _js=get_window_location_search_js,
     )
 
     submit_ex_button.click(
