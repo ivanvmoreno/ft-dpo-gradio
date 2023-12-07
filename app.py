@@ -18,18 +18,34 @@ from langchain.prompts import load_prompt
 from utils import force_git_push
 
 
-def generate_response(chatbot: ConversationChain, input: str, count=1) -> List[str]:
+def load_json_metadata(json_file: str):
+    with open(json_file, "r") as f:
+        json_data = json.load(f)
+    return json_data
+
+
+def generate_response(
+    chatbot: ConversationChain, input: str, count=1, prompt_data: dict = None
+) -> List[str]:
     """Generates responses for a `langchain` chatbot."""
+    if prompt_data:
+        input = chatbot.prompt.template.format(**prompt_data, input=input)
     return [chatbot.predict(input=input) for _ in range(count)]
 
 
 def generate_responses(
-    chatbots: List[ConversationChain], inputs: List[str]
+    chatbots: List[ConversationChain], inputs: List[str], prompt_data: dict = None
 ) -> List[str]:
     """Generates parallel responses for a list of `langchain` chatbots."""
     results = []
     with ThreadPoolExecutor(max_workers=100) as executor:
-        for result in executor.map(generate_response, chatbots, inputs, NUM_RESPONSES):
+        for result in executor.map(
+            generate_response,
+            chatbots,
+            inputs,
+            [NUM_RESPONSES] * len(inputs),
+            [prompt_data] * len(inputs),
+        ):
             results += result
     return results
 
@@ -72,6 +88,7 @@ f_stop = threading.Event()
 asynchronous_push(f_stop)
 
 prompt = load_prompt(PROMPT_TEMPLATES / "template_01.json")
+prompt_data = load_json_metadata(PROMPT_TEMPLATES / "data_01.json")
 
 MODEL_IDS = ["Open-Orca/Mistral-7B-OpenOrca"]
 chatbots = []
@@ -115,7 +132,7 @@ with demo:
     # Generate model prediction
     def _predict(txt, state):
         start = time.time()
-        responses = generate_responses(chatbots, [txt] * len(chatbots))
+        responses = generate_responses(chatbots, [txt] * len(chatbots), [prompt_data])
         print(
             f"Time taken to generate {len(chatbots)} responses : {time.time() - start:.2f} seconds"
         )
@@ -139,8 +156,12 @@ with demo:
 
         past_conversation_string = "<br />".join(
             [
-                "<br />".join(["Human 😃: " + user_input, "Assistant 🤖: " + model_response])
-                for user_input, model_response in zip(state["past_user_inputs"], state["generated_responses"] + [""])
+                "<br />".join(
+                    ["Human 😃: " + user_input, "Assistant 🤖: " + model_response]
+                )
+                for user_input, model_response in zip(
+                    state["past_user_inputs"], state["generated_responses"] + [""]
+                )
             ]
         )
         return (
