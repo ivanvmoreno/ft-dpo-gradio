@@ -13,7 +13,7 @@ from huggingface_hub import Repository
 from langchain import ConversationChain
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.llms import HuggingFaceHub
-from langchain.prompts import PromptTemplate, load_prompt
+from langchain.prompts import PromptTemplate
 
 from utils import force_git_push
 
@@ -33,7 +33,6 @@ def json_to_dict(json_file: str) -> dict:
 
 def generate_response(chatbot: ConversationChain, input: str, count=1) -> List[str]:
     """Generates responses for a `langchain` chatbot."""
-    input = chatbot.prompt.template.format(input=input, history=chatbot.memory.buffer)
     return [chatbot.predict(input=input) for _ in range(count)]
 
 
@@ -91,25 +90,16 @@ prompt_data = json_to_dict(PROMPT_TEMPLATES / "data_01.json")
 prompt_tpl = replace_template(prompt_tpl, prompt_data)
 prompt = PromptTemplate(template=prompt_tpl, input_variables=input_vars)
 
-MODEL_IDS = ["Open-Orca/Mistral-7B-OpenOrca"]
-chatbots = []
-
-for model_id in MODEL_IDS:
-    chatbots.append(
-        ConversationChain(
-            llm=HuggingFaceHub(
-                repo_id=model_id,
-                model_kwargs={"temperature": 1},
-                huggingfacehub_api_token=HF_TOKEN,
-            ),
-            prompt=prompt,
-            verbose=False,
-            memory=ConversationBufferMemory(ai_prefix="Assistant"),
-        )
-    )
-
-
-model_id2model = {chatbot.llm.repo_id: chatbot for chatbot in chatbots}
+chatbot = ConversationChain(
+    llm=HuggingFaceHub(
+        repo_id="Open-Orca/Mistral-7B-OpenOrca",
+        model_kwargs={"temperature": 1},
+        huggingfacehub_api_token=HF_TOKEN,
+    ),
+    prompt=prompt,
+    verbose=False,
+    memory=ConversationBufferMemory(ai_prefix="Assistant"),
+)
 
 demo = gr.Blocks()
 
@@ -122,8 +112,6 @@ with demo:
         "past_user_inputs": [],
         "generated_responses": [],
     }
-    for idx in range(len(chatbots)):
-        state_dict[f"response_{idx+1}"] = ""
     state = gr.JSON(state_dict, visible=False)
 
     gr.Markdown("# Talk to the assistant")
@@ -133,22 +121,14 @@ with demo:
     # Generate model prediction
     def _predict(txt, state):
         start = time.time()
-        responses = generate_responses(chatbots, [txt] * len(chatbots))
-        print(f"Time taken to generate {len(chatbots)} responses : {time.time() - start:.2f} seconds")
-
-        response2model_id = {}
-        for chatbot, response in zip(chatbots, responses):
-            response2model_id[response] = chatbot.llm.repo_id
+        responses = generate_response(chatbot, txt, count=NUM_RESPONSES)
+        print(f"Time taken to generate {len(responses)} responses : {time.time() - start:.2f} seconds")
 
         state["cnt"] += 1
-
-        new_state_md = f"Inputs remaining in HIT: {state['cnt']}/{TOTAL_CNT}"
 
         metadata = {"cnt": state["cnt"], "text": txt}
         for idx, response in enumerate(responses):
             metadata[f"response_{idx + 1}"] = response
-
-        metadata["response2model_id"] = response2model_id
 
         state["data"].append(metadata)
         state["past_user_inputs"].append(txt)
@@ -168,14 +148,12 @@ with demo:
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
-            new_state_md,
         )
 
-    def _select_response(selected_response, state, dummy):
+    def _select_response(selected_response, state):
         done = state["cnt"] == TOTAL_CNT
         state["generated_responses"].append(selected_response)
         state["data"][-1]["selected_response"] = selected_response
-        state["data"][-1]["selected_model"] = state["data"][-1]["response2model_id"][selected_response]
         if state["cnt"] == TOTAL_CNT:
             with open(DATA_FILE, "a") as jsonlfile:
                 json_data_with_assignment_id = [
@@ -202,13 +180,11 @@ with demo:
 
         if done:
             # Wipe the memory
-            for chatbot in chatbots:
-                chatbot.memory = ConversationBufferMemory(ai_prefix="Assistant")
+            chatbot.memory = ConversationBufferMemory(ai_prefix="Assistant")
         else:
-            # Sync all of the model's memories with the conversation path that
+            # Sync model's memory with the conversation path that
             # was actually taken.
-            for chatbot in chatbots:
-                chatbot.memory = model_id2model[state["data"][-1]["response2model_id"][selected_response]].memory
+            chatbot.memory = state["data"][-1][selected_response].memory
 
         text_input = gr.update(visible=False) if done else gr.update(visible=True)
         return (
@@ -220,7 +196,6 @@ with demo:
             gr.update(value=past_conversation_string),
             toggle_example_submit,
             toggle_final_submit,
-            dummy,
         )
 
     # Input fields
