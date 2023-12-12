@@ -1,21 +1,18 @@
 import json
 import os
-import threading
-import time
-import uuid
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
 
 import gradio as gr
+import torch
+import transformers
 from dotenv import load_dotenv
 from huggingface_hub import Repository
 from langchain import ConversationChain
-from langchain.chains.conversation.memory import ConversationBufferMemory
-from langchain.llms import HuggingFaceHub
+from langchain.chains.conversation.memory import ConversationBufferWindowMemory
+from langchain.llms.huggingface_pipeline import HuggingFacePipeline
 from langchain.prompts import PromptTemplate
-
-from utils import force_git_push
+from transformers import AutoTokenizer, StoppingCriteria, StoppingCriteriaList
 
 
 def replace_template(template: str, data: dict) -> str:
@@ -31,25 +28,6 @@ def json_to_dict(json_file: str) -> dict:
     return json_data
 
 
-def generate_response(chatbot: ConversationChain, input: str, count=1) -> List[str]:
-    """Generates responses for a `langchain` chatbot."""
-    return [chatbot.predict(input=input) for _ in range(count)]
-
-
-def generate_responses(chatbots: List[ConversationChain], inputs: List[str]) -> List[str]:
-    """Generates parallel responses for a list of `langchain` chatbots."""
-    results = []
-    with ThreadPoolExecutor(max_workers=100) as executor:
-        for result in executor.map(
-            generate_response,
-            chatbots,
-            inputs,
-            [NUM_RESPONSES] * len(inputs),
-        ):
-            results += result
-    return results
-
-
 if Path(".env").is_file():
     load_dotenv(".env")
 DATASET_REPO_URL = os.getenv("DATASET_REPO_URL")
@@ -60,192 +38,118 @@ NUM_RESPONSES = 3  # Number of responses to generate per interaction
 
 DATA_FILENAME = "data.jsonl"
 DATA_FILE = os.path.join("data", DATA_FILENAME)
-repo = Repository(local_dir="data", clone_from=DATASET_REPO_URL, use_auth_token=HF_TOKEN)
+repo = Repository(local_dir="data", clone_from=DATASET_REPO_URL, token=HF_TOKEN)
 
 TOTAL_CNT = 3  # How many user inputs to collect
 
 PUSH_FREQUENCY = 60
 
-
-def asynchronous_push(f_stop):
-    if repo.is_repo_clean():
-        print("Repo currently clean. Ignoring push_to_hub")
-    else:
-        repo.git_add(auto_lfs_track=True)
-        repo.git_commit("Auto commit by space")
-        if FORCE_PUSH == "yes":
-            force_git_push(repo)
-        else:
-            repo.git_push()
-    if not f_stop.is_set():
-        # call again in 60 seconds
-        threading.Timer(PUSH_FREQUENCY, asynchronous_push, [f_stop]).start()
-
-
-f_stop = threading.Event()
-asynchronous_push(f_stop)
-
-[input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "prompt_01.json").values()
-prompt_data = json_to_dict(PROMPT_TEMPLATES / "data_01.json")
+# Load prompt
+[input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "llama2_prompt.json").values()
+prompt_data = json_to_dict(PROMPT_TEMPLATES / "prompt_data.json")
 prompt_tpl = replace_template(prompt_tpl, prompt_data)
 prompt = PromptTemplate(template=prompt_tpl, input_variables=input_vars)
 
-chatbot = ConversationChain(
-    llm=HuggingFaceHub(
-        repo_id="Open-Orca/Mistral-7B-OpenOrca",
-        model_kwargs={"temperature": 1},
-        huggingfacehub_api_token=HF_TOKEN,
-    ),
-    prompt=prompt,
-    verbose=False,
-    memory=ConversationBufferMemory(ai_prefix="Assistant"),
+# Run on GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
+
+# Quantization config
+bnb_config = transformers.BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
 )
 
-demo = gr.Blocks()
+# HF model ID
+model_id = "meta-llama/Llama-2-13b-chat-hf"
 
-with demo:
-    # We keep track of state as a JSON
-    state_dict = {
-        "conversation_id": str(uuid.uuid4()),
-        "cnt": 0,
-        "data": [],
-        "past_user_inputs": [],
-        "generated_responses": [],
-    }
-    state = gr.JSON(state_dict, visible=False)
+# HF model config
+model_config = transformers.AutoConfig.from_pretrained(model_id, token=HF_TOKEN)
 
-    gr.Markdown("# Talk to the assistant")
+# Load model
+model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_id,
+    trust_remote_code=True,
+    config=model_config,
+    quantization_config=bnb_config,
+    device_map="auto",
+    token=HF_TOKEN,
+)
 
-    state_display = gr.Markdown(f"Your messages: 0/{TOTAL_CNT}")
+# Load tokenizer
+tokenizer = AutoTokenizer.from_pretrained(
+    model_id,
+    token=HF_TOKEN,
+)
 
-    # Generate model prediction
-    def _predict(txt, state):
-        start = time.time()
-        responses = generate_response(chatbot, txt, count=NUM_RESPONSES)
-        print(f"Time taken to generate {len(responses)} responses : {time.time() - start:.2f} seconds")
+# List of stop words
+stop_list = [
+    "\nCandidate:",
+]
+stop_list = [tokenizer(w)["input_ids"] for w in stop_list]
 
-        state["cnt"] += 1
 
-        metadata = {"cnt": state["cnt"], "text": txt}
-        for idx, response in enumerate(responses):
-            metadata[f"response_{idx + 1}"] = response
+class StopOnTokens(StoppingCriteria):
+    def __init__(self, eos_sequence: List[int]):
+        self.eos_sequence = eos_sequence
 
-        state["data"].append(metadata)
-        state["past_user_inputs"].append(txt)
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+        last_ids = input_ids[:, -len(self.eos_sequence) :].tolist()
+        return self.eos_sequence in last_ids
 
-        past_conversation_string = "<br />".join(
-            [
-                "<br />".join(["Human 😃: " + user_input, "Assistant 🤖: " + model_response])
-                for user_input, model_response in zip(state["past_user_inputs"], state["generated_responses"] + [""])
-            ]
-        )
-        return (
-            gr.update(visible=False),
-            gr.update(visible=True),
-            gr.update(visible=True, choices=responses, interactive=True, value=responses[0]),
-            gr.update(value=past_conversation_string),
-            state,
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-        )
 
-    def _select_response(selected_response, state):
-        done = state["cnt"] == TOTAL_CNT
-        state["generated_responses"].append(selected_response)
-        state["data"][-1]["selected_response"] = selected_response
-        if state["cnt"] == TOTAL_CNT:
-            with open(DATA_FILE, "a") as jsonlfile:
-                json_data_with_assignment_id = [
-                    json.dumps(
-                        dict(
-                            {
-                                "assignmentId": state["assignmentId"],
-                                "conversation_id": state["conversation_id"],
-                            },
-                            **datum,
-                        )
-                    )
-                    for datum in state["data"]
-                ]
-                jsonlfile.write("\n".join(json_data_with_assignment_id) + "\n")
-        toggle_example_submit = gr.update(visible=not done)
-        past_conversation_string = "<br />".join(
-            [
-                "<br />".join(["😃: " + user_input, "🤖: " + model_response])
-                for user_input, model_response in zip(state["past_user_inputs"], state["generated_responses"])
-            ]
-        )
-        toggle_final_submit = gr.update(visible=False)
+def predict(message, history):
+    response = chain.predict(input=message)
+    yield response
 
-        if done:
-            # Wipe the memory
-            chatbot.memory = ConversationBufferMemory(ai_prefix="Assistant")
-        else:
-            # Sync model's memory with the conversation path that
-            # was actually taken.
-            chatbot.memory = state["data"][-1][selected_response].memory
 
-        text_input = gr.update(visible=False) if done else gr.update(visible=True)
-        return (
-            gr.update(visible=False),
-            gr.update(visible=True),
-            text_input,
-            gr.update(visible=False),
-            state,
-            gr.update(value=past_conversation_string),
-            toggle_example_submit,
-            toggle_final_submit,
-        )
+generator = transformers.pipeline(
+    model=model,
+    tokenizer=tokenizer,
+    return_full_text=True,
+    task="text-generation",
+    temperature=0.75,
+    do_sample=True,
+    max_new_tokens=256,
+    repetition_penalty=1.1,
+    device_map="auto",
+    stopping_criteria=StoppingCriteriaList([StopOnTokens(stop_list)]),
+)
 
-    # Input fields
-    past_conversation = gr.Markdown()
-    text_input = gr.Textbox(placeholder="Enter a statement", show_label=False)
-    select_response = gr.Radio(
-        choices=[None, None],
-        visible=False,
-        label="Choose the most helpful and honest response",
-    )
-    select_response_button = gr.Button("Select Response", visible=False)
-    with gr.Column() as example_submit:
-        submit_ex_button = gr.Button("Submit")
-    with gr.Column(visible=False) as final_submit:
-        submit_hit_button = gr.Button("Submit HIT")
+chain = ConversationChain(
+    llm=HuggingFacePipeline(
+        pipeline=generator,
+    ),
+    prompt=prompt,
+    memory=ConversationBufferWindowMemory(k=5, ai_prefix="Assistant", human_prefix="Candidate"),
+    verbose=True,
+)
 
-    select_response_button.click(
-        _select_response,
-        inputs=[select_response, state],
-        outputs=[
-            select_response,
-            example_submit,
-            text_input,
-            select_response_button,
-            state,
-            past_conversation,
-            example_submit,
-            final_submit,
+
+def vote(data: gr.LikeData):
+    if data.liked:
+        print("You upvoted this response: " + data.value)
+    else:
+        print("You downvoted this response: " + data.value)
+
+
+with gr.Blocks() as demo:
+    reset = gr.Button("Reset Conversation", render=False)
+    reset.click(fn=lambda: chain.memory.clear())
+    chatbot = gr.Chatbot(render=False)
+    chatbot.like(vote, None, None)
+    chat = gr.ChatInterface(
+        predict,
+        chatbot=chatbot,
+        title="HR Agent – RLHF Test Environment",
+        description="Please, provide feedback (positive, negative) for the agent's responses.",
+        examples=[
+            "I have been working as a Research Engineer, in LLM-based use cases, and some other projects as a full-stack developer",
+            "Sure, I have been exploring how to work with open source LLMs, deploy and integrate them into existing products",
         ],
+        clear_btn=reset,
     )
 
-    submit_ex_button.click(
-        _predict,
-        inputs=[text_input, state],
-        outputs=[
-            text_input,
-            select_response_button,
-            select_response,
-            past_conversation,
-            state,
-            example_submit,
-            final_submit,
-            state_display,
-        ],
-    )
-
-    submit_hit_button.click(
-        lambda state: state,
-        inputs=[state],
-        outputs=[state],
-    )
-
-demo.launch()
+demo.queue().launch()
