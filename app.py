@@ -28,6 +28,11 @@ def json_to_dict(json_file: str) -> dict:
     return json_data
 
 
+def get_last_human_msg(memory: ConversationBufferWindowMemory):
+    hist = memory.load_memory_variables({})["history"]
+    return list(filter(lambda x: x.startswith("Candidate:"), hist.split("\n")))[-1]
+
+
 if Path(".env").is_file():
     load_dotenv(".env")
 DATASET_REPO_URL = os.getenv("DATASET_REPO_URL")
@@ -129,22 +134,23 @@ chain = ConversationChain(
 
 
 def vote(data: gr.LikeData):
+    [i, o] = (get_last_human_msg(chain.memory), "Assistant: " + data.value)
     if data.liked:
-        print("You upvoted this response: " + data.value)
+        print("👍 You upvoted this response: ", i, o)
     else:
-        print("You downvoted this response: " + data.value)
+        print("👎 You downvoted this response: ", i, o)
 
 
 with gr.Blocks() as demo:
-    reset = gr.Button("Reset Conversation", render=False)
+    reset = gr.Button("🙈 Reset Conversation", render=False)
     reset.click(fn=lambda: chain.memory.clear())
     chatbot = gr.Chatbot(render=False)
     chatbot.like(vote, None, None)
     chat = gr.ChatInterface(
         predict,
         chatbot=chatbot,
-        title="HR Agent – RLHF Test Environment",
-        description="Please, provide feedback (positive, negative) for the agent's responses.",
+        title="🤖 HR Agent – 🚦 RLHF Test Environment",
+        description="Please, provide feedback (👍 positive, 👎 negative) for the agent's responses.",
         examples=[
             "I have been working as a Research Engineer, in LLM-based use cases, and some other projects as a full-stack developer",
             "Sure, I have been exploring how to work with open source LLMs, deploy and integrate them into existing products",
