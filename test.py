@@ -13,8 +13,7 @@ from langchain import ConversationChain
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain.llms.huggingface_pipeline import HuggingFacePipeline
 from langchain.prompts import PromptTemplate
-from transformers import (AutoTokenizer,
-                          StoppingCriteria, StoppingCriteriaList)
+from transformers import AutoTokenizer, StoppingCriteria, StoppingCriteriaList
 
 
 def replace_template(template: str, data: dict) -> str:
@@ -66,8 +65,8 @@ TOTAL_CNT = 3  # How many user inputs to collect
 PUSH_FREQUENCY = 60
 
 # Load prompt
-[input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "prompt_01.json").values()
-prompt_data = json_to_dict(PROMPT_TEMPLATES / "data_01.json")
+[input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "llama2_prompt.json").values()
+prompt_data = json_to_dict(PROMPT_TEMPLATES / "prompt_data.json")
 prompt_tpl = replace_template(prompt_tpl, prompt_data)
 prompt = PromptTemplate(template=prompt_tpl, input_variables=input_vars)
 
@@ -77,11 +76,14 @@ print("Using device:", device)
 
 # Quantization config
 bnb_config = transformers.BitsAndBytesConfig(
-    load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4"
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
 )
 
 # HF model ID
-model_id = "daryl149/llama-2-7b-chat-hf"
+model_id = "meta-llama/Llama-2-13b-chat-hf"
 
 # HF model config
 model_config = transformers.AutoConfig.from_pretrained(model_id, token=HF_TOKEN)
@@ -103,7 +105,9 @@ tokenizer = AutoTokenizer.from_pretrained(
 )
 
 # List of stop words
-stop_list = ["\nUser:", "\n```\n"]
+stop_list = [
+    "\nCandidate:",
+]
 
 
 class StopOnTokens(StoppingCriteria):
@@ -125,9 +129,9 @@ generator = transformers.pipeline(
     tokenizer=tokenizer,
     return_full_text=True,
     task="text-generation",
-    temperature=0.8,
+    temperature=0.5,
     do_sample=True,
-    max_new_tokens=512,
+    max_new_tokens=256,
     repetition_penalty=1.1,
     device_map="auto",
     stopping_criteria=StoppingCriteriaList([StopOnTokens(stop_list)]),
@@ -138,7 +142,7 @@ chain = ConversationChain(
         pipeline=generator,
     ),
     prompt=prompt,
-    memory=ConversationBufferWindowMemory(k=5, return_messages=True, ai_prefix="Assistant", human_prefix="User"),
+    memory=ConversationBufferWindowMemory(k=5, ai_prefix="Assistant", human_prefix="Candidate"),
     verbose=True,
 )
 
