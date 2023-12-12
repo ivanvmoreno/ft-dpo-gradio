@@ -4,6 +4,6 @@ gradio==4.8.0
 python-dotenv==1.0.0
 transformers==4.35.2
 accelerate==0.25.0
-torch
-scipy
-bitsandbytes
+torch==2.1.1
+scipy==1.11.4
+bitsandbytes==0.41.3.post2
