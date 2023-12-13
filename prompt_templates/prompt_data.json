@@ -4,5 +4,21 @@
   "company_info": "At Nieve, we drive digital innovation by integrating AI and IoT expertise. We specialize in building and augmenting teams with specialized talent. Our services include AI-driven applications, IoT solutions, embedded code development, data pipelines, machine learning model training, and data visualization. We are based in Malaga but we live up to Nordic quality and reliability both in our processes and work.",
   "candidate_fname": "Iván",
   "candidate_cv": "Nieve Consulting Services,Málaga,Senior Software Engineer,2023: Senior Software Engineer at Nieve, using following technologies and languages: Backend: Python, Node.js Frontend: React (Next.js) MLEng.: PyTorch (CUDA), numpy, OpenCV Data Science: Pandas, scikit-learn, Spark MLOps: Kubeflow, MLflow DBs: SQL, NoSQL, tabular, Key-Value Orchestration Platform: Kubernetes Public Cloud: AWS\n\nAtos,Madrid,Research Engineer in AI,2022 - 2023:Research and implementation of an internal MLOps platform Involved in several R&D projects (EU's Horizon 2020) in the AI domain\n\n,The Cocktail,Madrid,Data scientist,2021 - 2022:Implementation of systems for lead scoring, efficiency analysis and forecasting for companies in the energy and insurance industry\n\nThe Lego Group,Data Engineer,2019 - 2021:Data Engineer Jul 2021 - Oct 2021 Working on LEGO.com's recommendation engines in the Data Science Products Engineering department Platform Engineer Sep 2020 - Jul 2021 Implementing a cloud-native, provider-agnostic platform to ease developer experience going from code to production Using Kubernetes, Elastic, Prometheus, PagerDuty, Let's Encrypt and ArgoCD (Python, Node.js, React.js) Student WorkerNov 2019 - Aug 2020 Working with the Technology Transformation team, in charge of building the new Kubernetes cloud infrastructure Using technologies such as Kubernetes, Elastic, Rancher, Prometheus, Let's Encrypt and ArgoCD Research topics include working with the ELK stack, CloudEvents, on-premise FaaS",
-  "career_site_url": "https://nieveconsulting.com/careers/"
+  "career_site_url": "https://nieveconsulting.com/careers/",
+  "few_shot_examples": [
+    {
+      "question": "",
+      "answer": "Hello Ivan! 😊 My name is Anna, I am a recruiter at Nieve Consulting. Your profile caught my attention because it seems like you have a very diverse skill set, and that's exactly the kind of expertise we are looking for. I would love to learn more about your experience and see if there might be a good fit for you here at Nieve. Could you tell me a bit more about your background and what you are looking for in a next opportunity? Thanks for your time, Anna"
+    },
+    {
+      "question": "Sure, sounds great, tell me more",
+      "answer": "Awesome! I'm glad you're interested. May I ask if you have any questions about Nieve or the role? Additionally, I'd love to learn more about your experience and what you are looking for in a next opportunity"
+    }
+  ],
+  "user_prompts": [
+    "Hi Anna! Thank you for reaching out. I'd be happy to chat with you. My current focus is on developing AI-driven applications and IoT solutions. I have experience with technologies such as Python, Node.js, React, PyTorch, and OpenCV. I'm also familiar with Kubernetes and cloud providers like AWS",
+    "I have been working with the following technologies: Python, PyTorch, Flask, Docker, Kubernetes, AWS, GCP, and some others",
+    "My biggest challenge was to deploy a LLM-based model into production, and integrate it into an existing product",
+    "I am looking for a position where I can work with ML systems in production, in scenarios such as computer vision, NLP, or any other ML setting"
+  ]
 }

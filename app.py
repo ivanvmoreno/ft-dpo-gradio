@@ -11,7 +11,7 @@ from huggingface_hub import Repository
 from langchain import ConversationChain
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain.llms.huggingface_pipeline import HuggingFacePipeline
-from langchain.prompts import PromptTemplate
+from langchain.prompts import FewShotPromptTemplate, PromptTemplate
 from transformers import AutoTokenizer, StoppingCriteria, StoppingCriteriaList
 
 
@@ -50,14 +50,23 @@ TOTAL_CNT = 3  # How many user inputs to collect
 PUSH_FREQUENCY = 60
 
 # Load prompt
-[input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "llama2_prompt.json").values()
+[model_id, input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "llama2_prompt.json").values()
 prompt_data = json_to_dict(PROMPT_TEMPLATES / "prompt_data.json")
+user_prompts = prompt_data.pop("user_prompts")
+examples = prompt_data.pop("few_shot_examples")
+prompt_examples = PromptTemplate(input_variables=["question", "answer"], template="Candidate: {question}\nAssistant: {answer}")
+
 prompt_tpl = replace_template(prompt_tpl, prompt_data)
-prompt = PromptTemplate(template=prompt_tpl, input_variables=input_vars)
+prompt = FewShotPromptTemplate(
+    examples=examples,
+    example_prompt=prompt_examples,
+    prefix=prompt_tpl + "\nExample interactions:\n",
+    suffix="\nCurrent conversation:\n{history}\nCandidate: {input}\nAssistant:",
+    input_variables=input_vars)
 
 # Run on GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using device:", device)
+print("🏎️ Using GPU" if device.type == "cuda" else "🐌 Using CPU")
 
 # Quantization config
 bnb_config = transformers.BitsAndBytesConfig(
@@ -66,9 +75,6 @@ bnb_config = transformers.BitsAndBytesConfig(
     bnb_4bit_use_double_quant=True,
     bnb_4bit_quant_type="nf4",
 )
-
-# HF model ID
-model_id = "meta-llama/Llama-2-13b-chat-hf"
 
 # HF model config
 model_config = transformers.AutoConfig.from_pretrained(model_id, token=HF_TOKEN)
@@ -151,10 +157,7 @@ with gr.Blocks() as demo:
         chatbot=chatbot,
         title="🤖 HR Agent – 🚦 RLHF Test Environment",
         description="Please, provide feedback (👍 positive, 👎 negative) for the agent's responses.",
-        examples=[
-            "I have been working as a Research Engineer, in LLM-based use cases, and some other projects as a full-stack developer",
-            "Sure, I have been exploring how to work with open source LLMs, deploy and integrate them into existing products",
-        ],
+        examples=user_prompts,
         clear_btn=reset,
     )
 
