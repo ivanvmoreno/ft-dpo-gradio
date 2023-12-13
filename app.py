@@ -54,7 +54,9 @@ PUSH_FREQUENCY = 60
 prompt_data = json_to_dict(PROMPT_TEMPLATES / "prompt_data.json")
 user_prompts = prompt_data.pop("user_prompts")
 examples = prompt_data.pop("few_shot_examples")
-prompt_examples = PromptTemplate(input_variables=["question", "answer"], template="Candidate: {question}\nAssistant: {answer}")
+prompt_examples = PromptTemplate(
+    input_variables=["question", "answer"], template="Candidate: {question}\nAssistant: {answer}"
+)
 
 prompt_tpl = replace_template(prompt_tpl, prompt_data)
 prompt = FewShotPromptTemplate(
@@ -62,7 +64,8 @@ prompt = FewShotPromptTemplate(
     example_prompt=prompt_examples,
     prefix=prompt_tpl + "\nExample interactions:\n",
     suffix="\nCurrent conversation:\n{history}\nCandidate: {input}\nAssistant:",
-    input_variables=input_vars)
+    input_variables=input_vars,
+)
 
 # Run on GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
