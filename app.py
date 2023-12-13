@@ -162,6 +162,8 @@ with gr.Blocks() as demo:
         description="Please, provide feedback (👍 positive, 👎 negative) for the agent's responses.",
         examples=user_prompts,
         clear_btn=reset,
+        retry_btn="🔄 Regenerate Last",
+        undo_btn=None,
     )
 
 demo.queue().launch()
