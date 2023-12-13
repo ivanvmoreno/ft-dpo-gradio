@@ -50,7 +50,11 @@ TOTAL_CNT = 3  # How many user inputs to collect
 PUSH_FREQUENCY = 60
 
 # Load prompt
-[model_id, input_vars, prompt_tpl] = json_to_dict(PROMPT_TEMPLATES / "llama2_prompt.json").values()
+model_name = "llama2"
+model_version = "13B"
+prompt_version = "0.1".replace(".", "_")
+prompt_fname = PROMPT_TEMPLATES / f"{model_name}_{model_version}_prompt_{prompt_version}.json"
+[model_id, input_vars, prompt_tpl] = json_to_dict(prompt_fname).values()
 prompt_data = json_to_dict(PROMPT_TEMPLATES / "prompt_data.json")
 user_prompts = prompt_data.pop("user_prompts")
 examples = prompt_data.pop("few_shot_examples")
