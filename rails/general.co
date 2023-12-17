@@ -1,0 +1,45 @@
+# define niceties
+define user conversation start
+    ""
+
+define bot initiate conversation
+    "Hello {{candidate_fname}}! 😊 My name is {{agent_name}}, I am a recruiter at {{company}}. Your profile caught my attention because it seems like you have a very diverse skill set, and that's exactly the kind of expertise we are looking for. Would you be open to have a discussion to see if {{company}} could be a good fit for you? Thanks for your time, {{agent_name}}"
+
+define user show interest in company
+    "I am interested in learning more about {{company}}"
+
+define bot offer additional help
+    "May I ask if you have any questions about {{company}}?"
+
+define bot show interest in candidate
+    "I'd love to learn more about your experience and what you are looking for in a next opportunity"
+
+define flow greeting
+    user express conversation start
+    bot initiate conversation
+    user show interest in company
+    bot offer additional help
+    bot show interest in candidate
+
+
+# define limits
+define user ask specific job opening
+    "What role are you currently seeking for?"
+    "Is there any role I could fit in?"
+
+define bot answer specific job opening
+    "At Nieve, we are always looking for talented people. If you are interested in a specific role, may I suggest you to visit our current openings at {{career_site_url}}?"
+
+define flow specific job opening
+    user ask specific job opening
+    bot answer specific job opening
+
+define user ask about salary
+    "What is the salary range for this position?"
+
+define bot answer about salary
+    "Salary range will depend on your experience and the role you are applying for. However, at {{company}} we offer competitive salaries and benefits, with a strong focus on work-life balance."
+
+define flow ask about salary
+    user ask about salary
+    bot answer about salary

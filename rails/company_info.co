@@ -1,0 +1,8 @@
+define user ask about company
+  "Can you tell me more about {{company}}?"
+  "What's {{company}} focused on?"
+
+define flow answer report question
+  user ask about company
+  $check_facts = True
+  bot provide report answer
